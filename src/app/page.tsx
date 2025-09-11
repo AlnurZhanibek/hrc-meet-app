@@ -10,21 +10,20 @@ const SERVICE_URL = 'wss://meet.hrcs.space/xmpp-websocket';
 
 export default function JitsiPage() {
   const {
-    roomName,
-    setRoomName,
     joined,
     setJoined,
     audioMuted,
     setAudioMuted,
     videoMuted,
     setVideoMuted,
-    screensharing,
-    setScreensharing,
-    remoteVideos,
-    addRemoteVideo,
-    removeRemoteById,
-    removeAllForParticipant,
-    reset
+    reset,
+    participants,
+    upsertParticipant,
+    setVideoEl,
+    setAudioEl,
+    removeParticipant,
+    roomName,
+    setRoomName
   } = useJitsiStore();
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -36,6 +35,12 @@ export default function JitsiPage() {
   // Helper: attach a lib-jitsi-meet track to a <video> (by id)
   const attachTrackToVideo = (track: JitsiTrack, elId: string) => {
     const el = document.getElementById(elId) as HTMLVideoElement | null;
+    if (el) track.attach(el);
+  };
+
+  const attachToEl = (track: JitsiTrack, elId?: string) => {
+    if (!elId) return;
+    const el = document.getElementById(elId) as HTMLMediaElement | null;
     if (el) track.attach(el);
   };
 
@@ -51,9 +56,8 @@ export default function JitsiPage() {
     JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.ERROR);
 
     const options = {
-      hosts: { domain: JITSI_DOMAIN, muc: `conference.${JITSI_DOMAIN}` },
-      serviceUrl: SERVICE_URL,
-      clientNode: 'http://jitsi.org/jitsimeet'
+      hosts: { domain: JITSI_DOMAIN, muc: `muc.${JITSI_DOMAIN}`, focus: `focus.${JITSI_DOMAIN}` },
+      serviceUrl: SERVICE_URL
     };
 
     const jwt = localStorage.getItem('token');
@@ -77,29 +81,38 @@ export default function JitsiPage() {
         if (track.isLocal && track.isLocal()) return;
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const participantId = track.getParticipantId?.() || track.ownerEndpointId || 'unknown';
-        const kind = track.getType() as 'audio' | 'video' | 'desktop';
-        const id = `${participantId}-${kind}`;
+        const pid = track.getParticipantId?.() || track.ownerEndpointId || 'unknown';
+        const kind = track.getType(); // 'audio' | 'video' | 'desktop'
 
-        addRemoteVideo({ id, participantId, kind });
+        // ensure participant card exists
+        upsertParticipant({ participantId: pid });
 
-        // Attach once the element is in the DOM
-        setTimeout(() => attachTrackToVideo(track, id), 0);
+        // give each participant stable element ids
+        const videoId = `${pid}-video`;
+        const audioId = `${pid}-audio`;
+        setVideoEl(pid, videoId);
+        setAudioEl(pid, audioId);
+
+        // attach to the right element (audio -> <audio>, video/desktop -> <video>)
+        setTimeout(() => {
+          if (kind === 'audio') attachToEl(track, audioId);
+          else attachToEl(track, videoId);
+        }, 0);
       });
 
       // remote track removed
       conf.on(JitsiMeetJS.events.conference.TRACK_REMOVED, (track: JitsiTrack) => {
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const participantId = track.getParticipantId?.();
-        const kind = track.getType?.();
-        if (!participantId || !kind) return;
-        const id = `${participantId}-${kind}`;
-        removeRemoteById(id);
+        const pid = track.getParticipantId?.();
+        if (!pid) return;
+        // Optionally detach here if you want:
+        // track.detach(document.getElementById(...))
+        // lib-jitsi-meet disposes on participant leave too.
       });
 
       conf.on(JitsiMeetJS.events.conference.USER_LEFT, (pid: string) => {
-        removeAllForParticipant(pid);
+        removeParticipant(pid);
       });
 
       conf.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED, async () => {
@@ -174,7 +187,6 @@ export default function JitsiPage() {
     setJoined(false);
     setAudioMuted(false);
     setVideoMuted(false);
-    setScreensharing(false);
   };
 
   // Make sure we cleanup when leaving the page
@@ -229,41 +241,6 @@ export default function JitsiPage() {
     }
   };
 
-  const toggleScreenshare = async () => {
-    const JitsiMeetJS = window.JitsiMeetJS;
-    if (!conferenceRef.current || !JitsiMeetJS) return;
-
-    if (!screensharing) {
-      try {
-        const [desktopTrack]: JitsiTrack[] = await JitsiMeetJS.createLocalTracks({
-          devices: ['desktop']
-        });
-        localTracksRef.current.push(desktopTrack);
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        await conferenceRef.current.addTrack(desktopTrack);
-        setScreensharing(true);
-      } catch (e) {
-        // console.warn('screenshare failed', e);
-      }
-    } else {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      const desktop = localTracksRef.current.find((t) => t.getType() === 'desktop');
-      if (!desktop) return;
-      try {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        await conferenceRef.current.removeTrack(desktop);
-      } catch {}
-      try {
-        desktop.dispose?.();
-      } catch {}
-      localTracksRef.current = localTracksRef.current.filter((t) => t !== desktop);
-      setScreensharing(false);
-    }
-  };
-
   return (
     <Stack gap="lg" p="lg">
       <Group justify="space-between">
@@ -292,9 +269,6 @@ export default function JitsiPage() {
         <Button variant="light" onClick={toggleVideo} disabled={!joined}>
           {videoMuted ? 'Unmute video' : 'Mute video'}
         </Button>
-        <Button variant="outline" onClick={toggleScreenshare} disabled={!joined}>
-          {screensharing ? 'Stop screenshare' : 'Start screenshare'}
-        </Button>
       </Group>
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
@@ -311,19 +285,22 @@ export default function JitsiPage() {
           />
         </Card>
 
-        {remoteVideos.map((v) => (
-          <Card key={v.id} withBorder radius="lg" padding="md">
+        {Object.values(participants).map((p) => (
+          <Card key={p.participantId} withBorder radius="lg" padding="md">
             <Card.Section inheritPadding py="sm">
-              <strong>
-                Remote: {v.participantId.slice(0, 6)}… ({v.kind})
-              </strong>
+              <strong>Remote: {p.participantId.slice(0, 6)}…</strong>
             </Card.Section>
+
+            {/* Video element (visible) */}
             <video
-              id={v.id}
+              id={`${p.participantId}-video`}
               autoPlay
               playsInline
               style={{ width: '100%', height: 240, background: 'black', borderRadius: 12 }}
             />
+
+            {/* Audio element (hidden UI, but plays sound) */}
+            <audio id={`${p.participantId}-audio`} autoPlay style={{ display: 'none' }} />
           </Card>
         ))}
       </SimpleGrid>
