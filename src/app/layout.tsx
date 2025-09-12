@@ -1,31 +1,20 @@
-import Script from 'next/script';
 import '@mantine/core/styles.css';
-import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from '@mantine/core';
-import { CounterStoreProvider } from '@/providers/counter-store-provider';
+import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import Script from 'next/script';
 
-export const metadata = {
-  title: 'My Mantine app',
-  description: 'I have followed setup instructions carefully'
-};
+export const metadata = { title: 'Jitsi Classroom' };
 
-export default function RootLayout({
-  children
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" {...mantineHtmlProps}>
+    <html lang="en">
       <head>
         <ColorSchemeScript />
       </head>
       <body>
-        <MantineProvider>
-          <CounterStoreProvider>{children}</CounterStoreProvider>
-        </MantineProvider>
-        <Script
-          src="https://8x8.vc/libs/lib-jitsi-meet.min.js"
-          strategy="beforeInteractive"
-        ></Script>
+        <MantineProvider defaultColorScheme="dark">{children}</MantineProvider>
+
+        {/* Load lib-jitsi-meet in the browser */}
+        <Script src="https://meet.jit.si/libs/lib-jitsi-meet.min.js" strategy="afterInteractive" />
       </body>
     </html>
   );
