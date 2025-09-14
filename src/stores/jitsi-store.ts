@@ -1,3 +1,4 @@
+import { devtools } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
 
 export type RemoteParticipant = {
@@ -34,44 +35,54 @@ export const defaultInitState: JitsiState = {
 };
 
 export const createJitsiStore = (initState: JitsiState = defaultInitState) =>
-  createStore<JitsiStore>((set) => ({
-    ...initState,
+  createStore<JitsiStore>()(
+    devtools((set) => ({
+      ...initState,
 
-    setRoomName: (roomName) => set({ roomName }),
-    setJoined: (joined) => set({ joined }),
-    setMyParticipantId: (myParticipantId) => set({ myParticipantId }),
+      setRoomName: (roomName) => set({ roomName }),
+      setJoined: (joined) => set({ joined }),
+      setMyParticipantId: (myParticipantId) => set({ myParticipantId }),
 
-    upsertParticipant: (p) =>
-      set((s) => ({
-        participants: {
-          ...s.participants,
-          [p.participantId]: { ...s.participants[p.participantId], ...p }
-        }
-      })),
-    removeParticipant: (pid) =>
-      set((s) => {
-        const { [pid]: _, ...rest } = s.participants;
-        return { participants: rest };
-      }),
-    setVideoEl: (pid, elId) =>
-      set((s) => ({
-        participants: {
-          ...s.participants,
-          [pid]: { ...s.participants[pid], videoElId: elId }
-        }
-      })),
-    setAudioEl: (pid, elId) =>
-      set((s) => ({
-        participants: {
-          ...s.participants,
-          [pid]: { ...s.participants[pid], audioElId: elId }
-        }
-      })),
+      upsertParticipant: (p) =>
+        set((s) => {
+          const existingParticipant = s.participants[p.participantId];
 
-    reset: () =>
-      set({
-        joined: false,
-        participants: {},
-        myParticipantId: undefined
-      })
-  }));
+          return {
+            participants: {
+              ...s.participants,
+              [p.participantId]: {
+                ...existingParticipant,
+                ...p
+              }
+            }
+          };
+        }),
+
+      removeParticipant: (pid) =>
+        set((s) => {
+          const { [pid]: _, ...rest } = s.participants;
+          return { participants: rest };
+        }),
+      setVideoEl: (pid, elId) =>
+        set((s) => ({
+          participants: {
+            ...s.participants,
+            [pid]: { ...s.participants[pid], videoElId: elId }
+          }
+        })),
+      setAudioEl: (pid, elId) =>
+        set((s) => ({
+          participants: {
+            ...s.participants,
+            [pid]: { ...s.participants[pid], audioElId: elId }
+          }
+        })),
+
+      reset: () =>
+        set({
+          joined: false,
+          participants: {},
+          myParticipantId: undefined
+        })
+    }))
+  );

@@ -13,16 +13,16 @@ import {
   Title
 } from '@mantine/core';
 import {
-  JitsiConnection,
-  JitsiConference,
   JitsiTrack,
   JitsiParticipant,
-  JitsiLocalTrack
+  JitsiLocalTrack,
+  JitsiConnection,
+  JitsiConference
 } from 'types-lib-jitsi-meet';
 import { useJitsiStore } from '@/providers/jitsi-store-provider';
 
 const JITSI_DOMAIN = 'meet.hrcs.space'; // your self-hosted domain
-const SERVICE_URL = 'wss://meet.hrcs.space/xmpp-websocket'; // your XMPP WS
+const SERVICE_URL = `wss://${JITSI_DOMAIN}/xmpp-websocket`; // your XMPP WS
 
 export default function ClassroomPage() {
   const {
@@ -40,11 +40,11 @@ export default function ClassroomPage() {
     reset
   } = useJitsiStore((state) => state);
 
+  const localTracksRef = useRef<JitsiLocalTrack[]>([]);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 
   const connectionRef = useRef<JitsiConnection | null>(null);
   const conferenceRef = useRef<JitsiConference | null>(null);
-  const localTracksRef = useRef<JitsiLocalTrack[]>([]);
 
   // -------- helpers
   const attachTrackTo = (track: JitsiTrack, elId?: string | null) => {
@@ -130,7 +130,9 @@ export default function ClassroomPage() {
           localTracksRef.current = [...localTracksRef.current, ...tracks];
 
           for (const t of tracks) {
-            if (t.getType() === 'video' && localVideoRef.current) t.attach(localVideoRef.current);
+            if (t.getType() === 'video' && localVideoRef.current) {
+              t.attach(localVideoRef.current);
+            }
             await conf.addTrack(t);
           }
         } catch {}
@@ -140,7 +142,10 @@ export default function ClassroomPage() {
 
       // keep roster + attach tracks
       conf.on(JitsiMeetJS.events.conference.USER_JOINED, (pid: string, user?: JitsiParticipant) => {
-        upsertParticipant({ participantId: pid, displayName: user?.getDisplayName?.() });
+        upsertParticipant({
+          participantId: pid,
+          displayName: user?.getDisplayName?.()
+        });
       });
       conf.on(JitsiMeetJS.events.conference.USER_LEFT, (pid: string) => {
         removeParticipant(pid);
