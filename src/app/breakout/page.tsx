@@ -36,7 +36,7 @@ const domain = 'meet.hrcs.space';
 const serviceUrl = `wss://${domain}/xmpp-websocket`;
 const mainRoom = 'room-a';
 const jwt =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJocmNzX3NwYWNlIiwiaXNzIjoiaHJjc19zcGFjZV9qaXRzaSIsInN1YiI6Im1lZXQuaHJjcy5zcGFjZSIsInJvb20iOiIqIiwiY29udGV4dCI6eyJ1c2VyIjp7Im5hbWUiOiJOaWtvIiwiZW1haWwiOiJuaWtvQGV4YW1wbGUuY29tIiwibW9kZXJhdG9yIjp0cnVlfX0sImV4cCI6MTc1ODEyODQwMH0.MmNI4jA70ZttFxgZ-na6Fb172PpF6YCJ3KyA4QSOI2k';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJocmNzX3NwYWNlIiwiaXNzIjoiaHJjc19zcGFjZV9qaXRzaSIsInN1YiI6Im1lZXQuaHJjcy5zcGFjZSIsInJvb20iOiIqIiwiY29udGV4dCI6eyJ1c2VyIjp7Im5hbWUiOiJOaWtvIiwiZW1haWwiOiJuaWtvQGV4YW1wbGUuY29tIiwibW9kZXJhdG9yIjp0cnVlfX0sImV4cCI6MTc2MDExNTYwMH0.52xzq2lv6aUc8EOoo4iQF1IUGbKY58GRji8nDHpxrnc';
 
 export default function BreakoutPanel() {
   const connectionRef = useRef<JitsiConnection>(null);
@@ -64,18 +64,24 @@ export default function BreakoutPanel() {
   // Helpers to (re)attach existing tracks to elements when refs appear
   const tryAttach = (pid: string) => {
     setTimeout(() => {
+      console.log('tryAttach', pid);
+
       const media = remoteTracksRef.current.get(pid) || {};
-      const vEl = videoElsRef.current.get(pid);
+      const vEl = document.getElementById(`${pid}-video`);
       if (media.video && vEl) {
         try {
           media.video.attach(vEl);
-        } catch {}
+        } catch (e) {
+          console.error('tryAttach', e);
+        }
       }
-      const aEl = audioElsRef.current.get(pid);
+      const aEl = document.getElementById(`${pid}-audio`);
       if (media.audio && aEl) {
         try {
           media.audio.attach(aEl);
-        } catch {}
+        } catch (e) {
+          console.error('tryAttach', e);
+        }
       }
     }, 0);
   };
@@ -130,12 +136,12 @@ export default function BreakoutPanel() {
 
     function addCommonListeners(conf: JitsiConference) {
       const E = JitsiMeetJS.events.conference;
+      for (const t of localTracksRef.current) conf.addTrack(t);
 
       conf.on(E.CONFERENCE_JOINED, () => {
         setStatus(`Joined ${conf.getName()}`);
         setMyId(conf.myUserId() || '');
         setInBreakout(conf.getName() !== mainRoom);
-        for (const t of localTracksRef.current) conf.addTrack(t);
         refreshParticipants(conf);
       });
 
@@ -155,7 +161,9 @@ export default function BreakoutPanel() {
 
       conf.on(E.TRACK_ADDED, (track: JitsiTrack) => {
         if (track.isLocal()) return; // remote only
-        const pid = track.getId();
+        //eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        //@ts-ignore
+        const pid = track.getParticipantId();
         const kind = track.getType(); // 'audio' | 'video'
         const prev = remoteTracksRef.current.get(pid as string) || {};
         const next = { ...prev, [kind]: track } as { audio?: JitsiTrack; video?: JitsiTrack };
@@ -281,10 +289,10 @@ export default function BreakoutPanel() {
     //@ts-ignore
     const next = connectionRef.current.initJitsiConference(room, { openBridgeChannel: true });
     const E = JitsiMeetJS.events.conference;
+    for (const t of localTracksRef.current) next.addTrack(t);
     next.on(E.CONFERENCE_JOINED, () => {
       setStatus(`Joined ${room}`);
       setInBreakout(room !== mainRoom);
-      for (const t of localTracksRef.current) next.addTrack(t);
       const list = next
         .getParticipants()
         .map((p: JitsiParticipant) => ({ id: p.getId(), displayName: p.getDisplayName?.() }));
@@ -421,6 +429,7 @@ export default function BreakoutPanel() {
                         videoElsRef.current.set(p.id, el);
                         if (el) tryAttach(p.id);
                       }}
+                      id={`${p.id}-video`}
                       autoPlay
                       playsInline
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -431,6 +440,7 @@ export default function BreakoutPanel() {
                       audioElsRef.current.set(p.id, el);
                       if (el) tryAttach(p.id);
                     }}
+                    id={`${p.id}-audio`}
                     autoPlay
                   />
                   <Group justify="space-between" align="center">
